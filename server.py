@@ -7,6 +7,9 @@ Features: Image upload with auto-resizing, listing, and streaming face recogniti
 from fastapi import FastAPI, HTTPException, UploadFile, File, Form
 from fastapi.responses import StreamingResponse, FileResponse
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
+from fastapi.responses import HTMLResponse
+
 import face_recognition
 import os
 import asyncio
@@ -557,68 +560,17 @@ async def delete_image(album_name: str, image_name: str):
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error deleting image: {str(e)}")
 
+# Serve static folder
+app.mount("/static", StaticFiles(directory="static"), name="static")
 
-@app.get("/")
-async def root():
-    """API information and documentation."""
-    return {
-        "name": "Face Recognition Streaming Server",
-        "version": "2.0",
-        "description": "FastAPI server for face recognition with image upload, resizing, and streaming search",
-        "endpoints": {
-            "upload": {
-                "method": "POST",
-                "path": "/upload",
-                "description": "Upload image to album (auto-resizes to ~500KB)",
-                "params": {"folder_name": "Album name", "image": "Image file (JPG/PNG)"}
-            },
-            "list_all": {
-                "method": "GET",
-                "path": "/list",
-                "description": "List all albums with images"
-            },
-            "list_album": {
-                "method": "GET",
-                "path": "/list/{album_name}",
-                "description": "List images in specific album"
-            },
-            "search": {
-                "method": "POST",
-                "path": "/search",
-                "description": "Stream face recognition results",
-                "params": {"sample_folder": "Folder with sample image", "album_folder": "Album to search in"}
-            },
-            "get_image": {
-                "method": "GET",
-                "path": "/images/albums/{album_name}/{image_name}",
-                "description": "Get image file"
-            },
-            "delete_album": {
-                "method": "DELETE",
-                "path": "/albums/{album_name}",
-                "description": "Delete entire album"
-            },
-            "delete_image": {
-                "method": "DELETE",
-                "path": "/images/albums/{album_name}/{image_name}",
-                "description": "Delete single image"
-            },
-            "status": {
-                "method": "GET",
-                "path": "/status",
-                "description": "Check server status"
-            }
-        },
-        "features": [
-            "Automatic image resizing and compression",
-            "EXIF auto-rotation",
-            "Real-time streaming face recognition",
-            "Album management",
-            "RESTful API with Swagger documentation"
-        ],
-        "swagger_ui": "http://localhost:8000/docs",
-        "redoc": "http://localhost:8000/redoc"
-    }
+# Serve index.html at /
+@app.get("/", response_class=HTMLResponse)
+async def serve_index():
+    """Serve the main HTML page."""
+    if not os.path.exists("index.html"):
+        return HTMLResponse("<h1>index.html not found</h1>", status_code=404)
+    with open("index.html", "r", encoding="utf-8") as f:
+        return HTMLResponse(f.read())
 
 
 @app.get("/status")
