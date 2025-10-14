@@ -1,0 +1,1364 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Face Recognition Server</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+        }
+
+        header {
+            background: white;
+            padding: 30px;
+            border-radius: 10px 10px 0 0;
+            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.1);
+            text-align: center;
+            border-bottom: 3px solid #667eea;
+        }
+
+        header h1 {
+            color: #333;
+            margin-bottom: 10px;
+            font-size: 2.5em;
+        }
+
+        header p {
+            color: #666;
+            font-size: 1.1em;
+        }
+
+        .server-config {
+            display: flex;
+            gap: 10px;
+            margin-top: 20px;
+            justify-content: center;
+            flex-wrap: wrap;
+            align-items: center;
+        }
+
+        input[type="text"], input[type="number"] {
+            padding: 10px 15px;
+            border: 2px solid #ddd;
+            border-radius: 5px;
+            font-size: 1em;
+            color: #333;
+        }
+
+        input:focus {
+            outline: none;
+            border-color: #667eea;
+            box-shadow: 0 0 5px rgba(102, 126, 234, 0.3);
+        }
+
+        .tabs-container {
+            background: white;
+            border-radius: 0 0 10px 10px;
+            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.1);
+            overflow: hidden;
+        }
+
+        .tabs {
+            display: flex;
+            border-bottom: 2px solid #eee;
+            background: #f8f9fa;
+            flex-wrap: wrap;
+        }
+
+        .tab-button {
+            flex: 1;
+            padding: 15px 20px;
+            border: none;
+            background: transparent;
+            cursor: pointer;
+            font-size: 1em;
+            font-weight: 500;
+            color: #666;
+            transition: all 0.3s;
+            border-bottom: 3px solid transparent;
+            min-width: 150px;
+        }
+
+        .tab-button:hover {
+            color: #333;
+            background: #f0f0f0;
+        }
+
+        .tab-button.active {
+            color: #667eea;
+            border-bottom-color: #667eea;
+            background: white;
+        }
+
+        .tab-content {
+            display: none;
+            padding: 30px;
+            animation: fadeIn 0.3s ease-out;
+        }
+
+        .tab-content.active {
+            display: block;
+        }
+
+        @keyframes fadeIn {
+            from {
+                opacity: 0;
+                transform: translateY(10px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        .section {
+            margin-bottom: 30px;
+        }
+
+        .section h2 {
+            color: #333;
+            margin-bottom: 15px;
+            font-size: 1.5em;
+            padding-bottom: 10px;
+            border-bottom: 2px solid #667eea;
+        }
+
+        .form-group {
+            margin-bottom: 15px;
+        }
+
+        .form-group label {
+            display: block;
+            margin-bottom: 5px;
+            color: #333;
+            font-weight: 500;
+        }
+
+        .form-group input,
+        .form-group select,
+        .form-group textarea {
+            width: 100%;
+            padding: 10px;
+            border: 2px solid #ddd;
+            border-radius: 5px;
+            font-size: 1em;
+            color: #333;
+        }
+
+        .form-group input:focus,
+        .form-group select:focus,
+        .form-group textarea:focus {
+            outline: none;
+            border-color: #667eea;
+            box-shadow: 0 0 5px rgba(102, 126, 234, 0.3);
+        }
+
+        .file-input-wrapper {
+            position: relative;
+            overflow: hidden;
+            display: inline-block;
+            width: 100%;
+        }
+
+        .file-input-wrapper input[type="file"] {
+            position: absolute;
+            left: -9999px;
+        }
+
+        .file-input-label {
+            display: block;
+            padding: 15px;
+            background: #f0f0f0;
+            border: 2px dashed #667eea;
+            border-radius: 5px;
+            text-align: center;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+
+        .file-input-label:hover {
+            background: #e8e8e8;
+            border-color: #764ba2;
+        }
+
+        .file-input-label.dragover {
+            background: #667eea;
+            color: white;
+        }
+
+        .button-group {
+            display: flex;
+            gap: 10px;
+            flex-wrap: wrap;
+        }
+
+        button {
+            padding: 12px 25px;
+            border: none;
+            border-radius: 5px;
+            font-size: 1em;
+            cursor: pointer;
+            transition: all 0.3s;
+            font-weight: bold;
+        }
+
+        .btn-primary {
+            background: #667eea;
+            color: white;
+            box-shadow: 0 4px 10px rgba(102, 126, 234, 0.3);
+        }
+
+        .btn-primary:hover:not(:disabled) {
+            background: #764ba2;
+            transform: translateY(-2px);
+            box-shadow: 0 6px 15px rgba(102, 126, 234, 0.4);
+        }
+
+        .btn-secondary {
+            background: #95a5a6;
+            color: white;
+        }
+
+        .btn-secondary:hover:not(:disabled) {
+            background: #7f8c8d;
+        }
+
+        .btn-danger {
+            background: #e74c3c;
+            color: white;
+        }
+
+        .btn-danger:hover:not(:disabled) {
+            background: #c0392b;
+        }
+
+        button:disabled {
+            background: #ccc;
+            cursor: not-allowed;
+            transform: none;
+        }
+
+        .status-message {
+            padding: 15px;
+            border-radius: 5px;
+            margin-bottom: 15px;
+            display: none;
+        }
+
+        .status-message.show {
+            display: block;
+        }
+
+        .status-message.success {
+            background: #d4edda;
+            color: #155724;
+            border-left: 4px solid #28a745;
+        }
+
+        .status-message.error {
+            background: #f8d7da;
+            color: #721c24;
+            border-left: 4px solid #f5c6cb;
+        }
+
+        .status-message.info {
+            background: #d1ecf1;
+            color: #0c5460;
+            border-left: 4px solid #bee5eb;
+        }
+
+        .status-message.loading {
+            background: #cfe2ff;
+            color: #084298;
+            border-left: 4px solid #b6d4fe;
+        }
+
+        .gallery {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
+            gap: 20px;
+            margin-top: 20px;
+        }
+
+        .image-card {
+            background: #f8f9fa;
+            border-radius: 8px;
+            overflow: hidden;
+            transition: all 0.3s;
+            animation: slideIn 0.5s ease-out;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+        }
+
+        @keyframes slideIn {
+            from {
+                opacity: 0;
+                transform: translateY(20px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        .image-card:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 6px 20px rgba(0, 0, 0, 0.15);
+        }
+
+        .image-card img {
+            width: 100%;
+            height: 250px;
+            object-fit: cover;
+        }
+
+        .image-info {
+            padding: 15px;
+        }
+
+        .image-name {
+            color: #333;
+            font-weight: bold;
+            word-break: break-word;
+            margin-bottom: 8px;
+        }
+
+        .image-meta {
+            color: #666;
+            font-size: 0.9em;
+            margin-bottom: 5px;
+        }
+
+        .confidence {
+            background: #667eea;
+            color: white;
+            padding: 5px 10px;
+            border-radius: 20px;
+            font-size: 0.85em;
+            font-weight: bold;
+            display: inline-block;
+            margin-top: 8px;
+        }
+
+        .match-badge {
+            background: #27ae60;
+            color: white;
+            padding: 3px 8px;
+            border-radius: 15px;
+            font-size: 0.8em;
+            font-weight: bold;
+            display: inline-block;
+            margin-left: 5px;
+        }
+
+        .empty-state {
+            text-align: center;
+            color: #999;
+            padding: 40px 20px;
+            font-size: 1.1em;
+            grid-column: 1 / -1;
+        }
+
+        .album-list {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+            gap: 20px;
+            margin-top: 20px;
+        }
+
+        .album-card {
+            background: #f8f9fa;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+            transition: all 0.3s;
+        }
+
+        .album-card:hover {
+            box-shadow: 0 6px 20px rgba(0, 0, 0, 0.15);
+            transform: translateY(-3px);
+        }
+
+        .album-name {
+            font-size: 1.3em;
+            font-weight: bold;
+            color: #333;
+            margin-bottom: 10px;
+        }
+
+        .album-count {
+            color: #667eea;
+            font-weight: bold;
+            margin-bottom: 15px;
+        }
+
+        .album-images {
+            display: flex;
+            gap: 8px;
+            flex-wrap: wrap;
+            margin-bottom: 15px;
+            max-height: 150px;
+            overflow-y: auto;
+        }
+
+        .album-thumb {
+            width: 60px;
+            height: 60px;
+            border-radius: 5px;
+            object-fit: cover;
+            border: 2px solid #ddd;
+            cursor: pointer;
+        }
+
+        .album-thumb:hover {
+            border-color: #667eea;
+        }
+
+        .table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 15px;
+            background: white;
+            border-radius: 8px;
+            overflow: hidden;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+        }
+
+        .table th {
+            background: #667eea;
+            color: white;
+            padding: 12px;
+            text-align: left;
+            font-weight: bold;
+        }
+
+        .table td {
+            padding: 12px;
+            border-bottom: 1px solid #eee;
+        }
+
+        .table tr:hover {
+            background: #f8f9fa;
+        }
+
+        .action-buttons {
+            display: flex;
+            gap: 8px;
+        }
+
+        .btn-small {
+            padding: 6px 12px;
+            font-size: 0.85em;
+        }
+
+        .summary {
+            background: #d4edda;
+            border: 2px solid #28a745;
+            padding: 20px;
+            border-radius: 8px;
+            margin-top: 20px;
+            display: none;
+        }
+
+        .summary.show {
+            display: block;
+            animation: slideIn 0.5s ease-out;
+        }
+
+        .summary h3 {
+            color: #155724;
+            margin-bottom: 10px;
+            font-size: 1.3em;
+        }
+
+        .summary p {
+            color: #155724;
+            font-size: 1.1em;
+            margin: 5px 0;
+        }
+
+        .spinner {
+            display: inline-block;
+            width: 16px;
+            height: 16px;
+            border: 2px solid #f3f3f3;
+            border-top: 2px solid #667eea;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+            margin-right: 8px;
+            vertical-align: middle;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        .stats {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 15px;
+            margin-top: 20px;
+        }
+
+        .stat-box {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 20px;
+            border-radius: 8px;
+            text-align: center;
+            box-shadow: 0 4px 10px rgba(102, 126, 234, 0.3);
+        }
+
+        .stat-value {
+            font-size: 2em;
+            font-weight: bold;
+            margin-bottom: 5px;
+        }
+
+        .stat-label {
+            font-size: 0.9em;
+            opacity: 0.9;
+        }
+
+        .modal {
+            display: none;
+            position: fixed;
+            z-index: 1000;
+            left: 0;
+            top: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0, 0, 0, 0.8);
+            animation: fadeIn 0.3s;
+        }
+
+        .modal-content {
+            background-color: white;
+            margin: 5% auto;
+            padding: 30px;
+            border-radius: 10px;
+            max-width: 800px;
+            max-height: 80vh;
+            overflow-y: auto;
+            position: relative;
+        }
+
+        .modal-close {
+            position: absolute;
+            right: 20px;
+            top: 20px;
+            font-size: 28px;
+            font-weight: bold;
+            color: #aaa;
+            cursor: pointer;
+        }
+
+        .modal-close:hover {
+            color: #000;
+        }
+
+        .modal img {
+            max-width: 100%;
+            border-radius: 8px;
+            margin-bottom: 15px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>🔍 Face Recognition Server</h1>
+            <p>Complete solution for face recognition, image management, and search</p>
+            
+            <div class="server-config">
+                <input 
+                    type="text" 
+                    id="serverUrl" 
+                    placeholder="Server URL (e.g., http://localhost:8000)" 
+                    value="http://localhost:8000"
+                >
+                <button class="btn-primary" onclick="testConnection()">Test Connection</button>
+                <span id="connectionStatus" style="color: #666; margin-left: 10px;"></span>
+            </div>
+        </header>
+
+        <div class="tabs-container">
+            <div class="tabs">
+                <button class="tab-button active" onclick="switchTab('upload')">📤 Upload</button>
+                <button class="tab-button" onclick="switchTab('search')">🔍 Search</button>
+                <button class="tab-button" onclick="switchTab('albums')">📁 Albums</button>
+                <button class="tab-button" onclick="switchTab('status')">📊 Status</button>
+            </div>
+
+            <!-- UPLOAD TAB -->
+            <div id="upload" class="tab-content active">
+                <div class="section">
+                    <h2>📤 Upload Images</h2>
+                    <p style="color: #666; margin-bottom: 15px;">Upload images to albums. They will be automatically resized and optimized for face recognition.</p>
+                    
+                    <div id="uploadStatus" class="status-message"></div>
+
+                    <div class="form-group">
+                        <label for="albumNameUpload">Album Name *</label>
+                        <input 
+                            type="text" 
+                            id="albumNameUpload" 
+                            placeholder="e.g., vacation, family, team" 
+                            value="my_album"
+                        >
+                    </div>
+
+                    <div class="form-group">
+                        <label>Select Image File *</label>
+                        <div class="file-input-wrapper">
+                            <input 
+                                type="file" 
+                                id="imageFile" 
+                                accept="image/jpeg,image/png,image/jpg"
+                                onchange="updateFileName()"
+                            >
+                            <label for="imageFile" class="file-input-label" id="fileLabel" ondrop="handleDrop(event)" ondragover="handleDragOver(event)" ondragleave="handleDragLeave(event)">
+                                <div>📁 Drag and drop image here or click to select</div>
+                                <div style="font-size: 0.9em; margin-top: 5px; color: #666;">Supported: JPG, PNG</div>
+                                <div id="fileName" style="margin-top: 8px; font-weight: bold; color: #667eea; display: none;"></div>
+                            </label>
+                        </div>
+                    </div>
+
+                    <div class="button-group">
+                        <button class="btn-primary" onclick="uploadImage()">Upload Image</button>
+                        <button class="btn-secondary" onclick="clearUploadForm()">Clear</button>
+                    </div>
+
+                    <div id="uploadPreview" style="margin-top: 20px; display: none;">
+                        <h3 style="margin-bottom: 10px;">Upload Result:</h3>
+                        <div id="uploadDetails"></div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- SEARCH TAB -->
+            <div id="search" class="tab-content">
+                <div class="section">
+                    <h2>🔍 Face Recognition Search</h2>
+                    <p style="color: #666; margin-bottom: 15px;">Search for matching faces across albums using a sample image.</p>
+
+                    <div id="searchStatus" class="status-message"></div>
+
+                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-bottom: 20px;">
+                        <div class="form-group">
+                            <label for="sampleFolder">Sample Folder *</label>
+                            <input 
+                                type="text" 
+                                id="sampleFolder" 
+                                placeholder="e.g., my_album (contains reference image)" 
+                                value="my_album"
+                            >
+                            <small style="color: #666;">Folder containing the reference face image</small>
+                        </div>
+
+                        <div class="form-group">
+                            <label for="searchAlbum">Album to Search *</label>
+                            <input 
+                                type="text" 
+                                id="searchAlbum" 
+                                placeholder="e.g., album_to_search" 
+                                value="my_album"
+                            >
+                            <small style="color: #666;">Album folder to search for matches</small>
+                        </div>
+                    </div>
+
+                    <div class="button-group">
+                        <button class="btn-primary" onclick="startSearch()" id="startSearchBtn">Start Search</button>
+                        <button class="btn-secondary" onclick="stopSearch()" id="stopSearchBtn" disabled>Stop Search</button>
+                    </div>
+
+                    <div id="searchResults" style="margin-top: 20px;">
+                        <div class="gallery" id="resultsGallery"></div>
+                        <div id="searchSummary" class="summary"></div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- ALBUMS TAB -->
+            <div id="albums" class="tab-content">
+                <div class="section">
+                    <h2>📁 Albums & Images</h2>
+                    <p style="color: #666; margin-bottom: 15px;">Manage your albums and view all images.</p>
+
+                    <div id="albumsStatus" class="status-message"></div>
+
+                    <button class="btn-primary" onclick="loadAlbums()">Refresh Albums</button>
+
+                    <div id="albumsContainer" class="album-list" style="margin-top: 20px;"></div>
+
+                    <h3 style="margin-top: 40px; margin-bottom: 15px;">📸 All Images</h3>
+                    <div id="imagesContainer"></div>
+                </div>
+            </div>
+
+            <!-- STATUS TAB -->
+            <div id="status" class="tab-content">
+                <div class="section">
+                    <h2>📊 Server Status</h2>
+                    <p style="color: #666; margin-bottom: 15px;">Monitor server health and configuration.</p>
+
+                    <button class="btn-primary" onclick="getServerStatus()">Refresh Status</button>
+
+                    <div id="statusContainer" style="margin-top: 20px;"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Image Modal -->
+    <div id="imageModal" class="modal" onclick="closeModal()">
+        <div class="modal-content" onclick="event.stopPropagation()">
+            <span class="modal-close" onclick="closeModal()">&times;</span>
+            <div id="modalContent"></div>
+        </div>
+    </div>
+
+    <script>
+        let eventSource = null;
+        let searchMatches = [];
+        let searchReader = null;
+
+        function switchTab(tabName) {
+            document.querySelectorAll('.tab-content').forEach(tab => {
+                tab.classList.remove('active');
+            });
+            document.querySelectorAll('.tab-button').forEach(btn => {
+                btn.classList.remove('active');
+            });
+
+            document.getElementById(tabName).classList.add('active');
+            event.target.classList.add('active');
+
+            if (tabName === 'albums') {
+                loadAlbums();
+            } else if (tabName === 'status') {
+                getServerStatus();
+            }
+        }
+
+        function getServerUrl() {
+            return document.getElementById('serverUrl').value.trim();
+        }
+
+        function showStatus(elementId, message, type = 'info') {
+            const element = document.getElementById(elementId);
+            element.innerHTML = message;
+            element.className = `status-message show ${type}`;
+        }
+
+        async function testConnection() {
+            const serverUrl = getServerUrl();
+            if (!serverUrl) {
+                document.getElementById('connectionStatus').innerHTML = '❌ No server URL';
+                document.getElementById('connectionStatus').style.color = '#e74c3c';
+                return;
+            }
+
+            try {
+                const response = await fetch(`${serverUrl}/status`);
+                if (response.ok) {
+                    document.getElementById('connectionStatus').innerHTML = '✅ Connected';
+                    document.getElementById('connectionStatus').style.color = '#27ae60';
+                } else {
+                    document.getElementById('connectionStatus').innerHTML = '❌ Connection failed';
+                    document.getElementById('connectionStatus').style.color = '#e74c3c';
+                }
+            } catch (error) {
+                document.getElementById('connectionStatus').innerHTML = '❌ Server offline';
+                document.getElementById('connectionStatus').style.color = '#e74c3c';
+            }
+        }
+
+        function updateFileName() {
+            const file = document.getElementById('imageFile').files[0];
+            if (file) {
+                document.getElementById('fileName').textContent = `✓ ${file.name}`;
+                document.getElementById('fileName').style.display = 'block';
+            }
+        }
+
+        function handleDragOver(e) {
+            e.preventDefault();
+            e.stopPropagation();
+            document.getElementById('fileLabel').classList.add('dragover');
+        }
+
+        function handleDragLeave(e) {
+            e.preventDefault();
+            e.stopPropagation();
+            document.getElementById('fileLabel').classList.remove('dragover');
+        }
+
+        function handleDrop(e) {
+            e.preventDefault();
+            e.stopPropagation();
+            document.getElementById('fileLabel').classList.remove('dragover');
+
+            const files = e.dataTransfer.files;
+            if (files.length > 0) {
+                document.getElementById('imageFile').files = files;
+                updateFileName();
+            }
+        }
+
+        async function uploadImage() {
+            const serverUrl = getServerUrl();
+            const albumName = document.getElementById('albumNameUpload').value.trim();
+            const imageFile = document.getElementById('imageFile').files[0];
+
+            if (!albumName) {
+                showStatus('uploadStatus', '❌ Please enter album name', 'error');
+                return;
+            }
+
+            if (!imageFile) {
+                showStatus('uploadStatus', '❌ Please select an image', 'error');
+                return;
+            }
+
+            showStatus('uploadStatus', '<span class="spinner"></span>Uploading and resizing...', 'loading');
+
+            const formData = new FormData();
+            formData.append('folder_name', albumName);
+            formData.append('image', imageFile);
+
+            try {
+                const response = await fetch(`${serverUrl}/upload`, {
+                    method: 'POST',
+                    body: formData
+                });
+
+                if (response.ok) {
+                    const result = await response.json();
+                    showStatus('uploadStatus', '✅ Image uploaded and resized successfully', 'success');
+                    
+                    const details = result.resizing;
+                    const html = `
+                        <table class="table">
+                            <tr>
+                                <td><strong>File:</strong></td>
+                                <td>${result.filename}</td>
+                            </tr>
+                            <tr>
+                                <td><strong>Album:</strong></td>
+                                <td>${result.folder}</td>
+                            </tr>
+                            <tr>
+                                <td><strong>Original Size:</strong></td>
+                                <td>${details.original_size}</td>
+                            </tr>
+                            <tr>
+                                <td><strong>Final Size:</strong></td>
+                                <td>${details.final_size}</td>
+                            </tr>
+                            <tr>
+                                <td><strong>Compression:</strong></td>
+                                <td>${details.compression}</td>
+                            </tr>
+                            <tr>
+                                <td><strong>Original Dimensions:</strong></td>
+                                <td>${details.original_dimensions}</td>
+                            </tr>
+                            <tr>
+                                <td><strong>Final Dimensions:</strong></td>
+                                <td>${details.final_dimensions}</td>
+                            </tr>
+                            <tr>
+                                <td><strong>Quality:</strong></td>
+                                <td>${details.quality}</td>
+                            </tr>
+                        </table>
+                    `;
+                    document.getElementById('uploadDetails').innerHTML = html;
+                    document.getElementById('uploadPreview').style.display = 'block';
+                    
+                    clearUploadForm();
+                } else {
+                    const error = await response.json();
+                    showStatus('uploadStatus', `❌ Error: ${error.detail}`, 'error');
+                }
+            } catch (error) {
+                showStatus('uploadStatus', `❌ Upload failed: ${error.message}`, 'error');
+            }
+        }
+
+        function clearUploadForm() {
+            document.getElementById('imageFile').value = '';
+            document.getElementById('fileName').style.display = 'none';
+        }
+
+        async function startSearch() {
+            const serverUrl = getServerUrl();
+            const sampleFolder = document.getElementById('sampleFolder').value.trim();
+            const searchAlbum = document.getElementById('searchAlbum').value.trim();
+
+            if (!sampleFolder) {
+                showStatus('searchStatus', '❌ Please enter sample folder', 'error');
+                return;
+            }
+
+            if (!searchAlbum) {
+                showStatus('searchStatus', '❌ Please enter album to search', 'error');
+                return;
+            }
+
+            searchMatches = [];
+            document.getElementById('resultsGallery').innerHTML = '';
+            document.getElementById('searchSummary').classList.remove('show');
+
+            showStatus('searchStatus', '<span class="spinner"></span>Starting face recognition search...', 'loading');
+            document.getElementById('startSearchBtn').disabled = true;
+            document.getElementById('stopSearchBtn').disabled = false;
+
+            const formData = new FormData();
+            formData.append('sample_folder', sampleFolder);
+            formData.append('album_folder', searchAlbum);
+
+            try {
+                const response = await fetch(`${serverUrl}/search`, {
+                    method: 'POST',
+                    body: formData
+                });
+
+                if (response.ok) {
+                    searchReader = response.body.getReader();
+                    const decoder = new TextDecoder();
+                    let buffer = '';
+
+                    while (true) {
+                        const { done, value } = await searchReader.read();
+                        if (done) break;
+
+                        buffer += decoder.decode(value, { stream: true });
+                        const lines = buffer.split('\n');
+                        buffer = lines.pop();
+
+                        for (const line of lines) {
+                            if (line.startsWith('data: ')) {
+                                const message = line.substring(6);
+                                handleSearchMessage(message, serverUrl, searchAlbum);
+                            }
+                        }
+                    }
+                } else {
+                    const error = await response.json();
+                    showStatus('searchStatus', `❌ Error: ${error.detail}`, 'error');
+                }
+            } catch (error) {
+                if (error.name !== 'AbortError') {
+                    showStatus('searchStatus', `❌ Search failed: ${error.message}`, 'error');
+                }
+            } finally {
+                document.getElementById('startSearchBtn').disabled = false;
+                document.getElementById('stopSearchBtn').disabled = true;
+                searchReader = null;
+            }
+        }
+
+        function handleSearchMessage(message, serverUrl, searchAlbum) {
+            if (message.startsWith('error:')) {
+                showStatus('searchStatus', `❌ ${message}`, 'error');
+            } else if (message.startsWith('✅ MATCH')) {
+                const regex = /✅ MATCH (\d+): (.+?) \| Confidence: ([\d.]+)%/;
+                const match = message.match(regex);
+                if (match) {
+                    const matchNum = parseInt(match[1]);
+                    const filename = match[2];
+                    const confidence = parseFloat(match[3]).toFixed(1);
+
+                    searchMatches.push({ matchNum, filename, confidence });
+                    addSearchResultCard(filename, confidence, matchNum, serverUrl, searchAlbum);
+                    showStatus('searchStatus', `🎉 Found ${matchNum} match${matchNum !== 1 ? 'es' : ''}...`, 'success');
+                }
+            } else if (message.startsWith('🎯 Search Complete')) {
+                showStatus('searchStatus', `✅ Search complete! Found ${searchMatches.length} matches.`, 'success');
+                showSearchSummary();
+            } else if (message.startsWith('Searching')) {
+                showStatus('searchStatus', `<span class="spinner"></span>${message}`, 'loading');
+            }
+        }
+
+        function addSearchResultCard(filename, confidence, matchNum, serverUrl, albumName) {
+            const gallery = document.getElementById('resultsGallery');
+            const imageUrl = `${serverUrl}/images/albums/${albumName}/${filename}`;
+            
+            const card = document.createElement('div');
+            card.className = 'image-card';
+            card.innerHTML = `
+                <img src="${imageUrl}" alt="${filename}" onclick="showImageModal('${imageUrl}', '${filename}', '${confidence}', '${albumName}')">
+                <div class="image-info">
+                    <div class="image-name">${filename}</div>
+                    <div class="image-meta">Album: ${albumName}</div>
+                    <div class="image-meta">Match #${matchNum}</div>
+                    <div class="confidence">Confidence: ${confidence}%</div>
+                </div>
+            `;
+            gallery.appendChild(card);
+        }
+
+        function showSearchSummary() {
+            const summary = document.getElementById('searchSummary');
+            if (searchMatches.length === 0) {
+                summary.innerHTML = `
+                    <h3>No Matches Found</h3>
+                    <p>No faces matched the reference image with sufficient confidence.</p>
+                `;
+            } else {
+                const avgConfidence = (searchMatches.reduce((sum, m) => sum + parseFloat(m.confidence), 0) / searchMatches.length).toFixed(1);
+                const maxConfidence = Math.max(...searchMatches.map(m => parseFloat(m.confidence))).toFixed(1);
+                const minConfidence = Math.min(...searchMatches.map(m => parseFloat(m.confidence))).toFixed(1);
+                
+                summary.innerHTML = `
+                    <h3>🎉 Search Results Summary</h3>
+                    <p><strong>Total Matches:</strong> ${searchMatches.length}</p>
+                    <p><strong>Average Confidence:</strong> ${avgConfidence}%</p>
+                    <p><strong>Highest Confidence:</strong> ${maxConfidence}%</p>
+                    <p><strong>Lowest Confidence:</strong> ${minConfidence}%</p>
+                `;
+            }
+            summary.classList.add('show');
+        }
+
+        function stopSearch() {
+            if (searchReader) {
+                searchReader.cancel();
+                searchReader = null;
+                showStatus('searchStatus', '⚠️ Search stopped by user', 'info');
+                document.getElementById('startSearchBtn').disabled = false;
+                document.getElementById('stopSearchBtn').disabled = true;
+            }
+        }
+
+        async function loadAlbums() {
+            const serverUrl = getServerUrl();
+            showStatus('albumsStatus', '<span class="spinner"></span>Loading albums...', 'loading');
+
+            try {
+                const response = await fetch(`${serverUrl}/list`);
+                if (response.ok) {
+                    const data = await response.json();
+                    displayAlbums(data.albums);
+                    showStatus('albumsStatus', `✅ Loaded ${Object.keys(data.albums).length} album(s)`, 'success');
+                } else {
+                    showStatus('albumsStatus', '❌ Failed to load albums', 'error');
+                }
+            } catch (error) {
+                showStatus('albumsStatus', `❌ Error: ${error.message}`, 'error');
+            }
+        }
+
+        function displayAlbums(albums) {
+            const container = document.getElementById('albumsContainer');
+            const imagesContainer = document.getElementById('imagesContainer');
+            
+            if (Object.keys(albums).length === 0) {
+                container.innerHTML = '<div class="empty-state">No albums found. Upload images to create albums!</div>';
+                imagesContainer.innerHTML = '<div class="empty-state">No images to display</div>';
+                return;
+            }
+
+            let albumsHtml = '';
+            let allImagesHtml = '<div class="gallery">';
+            
+            for (const [albumName, albumData] of Object.entries(albums)) {
+                const serverUrl = getServerUrl();
+                
+                albumsHtml += `
+                    <div class="album-card">
+                        <div class="album-name">📁 ${albumName}</div>
+                        <div class="album-count">${albumData.count} image${albumData.count !== 1 ? 's' : ''}</div>
+                        <div class="album-images">
+                            ${albumData.images.slice(0, 6).map(img => `
+                                <img src="${serverUrl}${img.url}" 
+                                     class="album-thumb" 
+                                     alt="${img.filename}"
+                                     onclick="showImageModal('${serverUrl}${img.url}', '${img.filename}', null, '${albumName}')"
+                                     title="${img.filename}">
+                            `).join('')}
+                            ${albumData.count > 6 ? `<div style="padding: 20px; color: #666;">+${albumData.count - 6} more</div>` : ''}
+                        </div>
+                        <div class="button-group">
+                            <button class="btn-secondary btn-small" onclick="viewAlbumDetails('${albumName}')">View All</button>
+                            <button class="btn-danger btn-small" onclick="deleteAlbum('${albumName}')">Delete Album</button>
+                        </div>
+                    </div>
+                `;
+
+                albumData.images.forEach(img => {
+                    allImagesHtml += `
+                        <div class="image-card">
+                            <img src="${serverUrl}${img.url}" alt="${img.filename}" 
+                                 onclick="showImageModal('${serverUrl}${img.url}', '${img.filename}', null, '${albumName}')">
+                            <div class="image-info">
+                                <div class="image-name">${img.filename}</div>
+                                <div class="image-meta">Album: ${albumName}</div>
+                                <div class="action-buttons">
+                                    <button class="btn-danger btn-small" onclick="deleteImage('${albumName}', '${img.filename}')">Delete</button>
+                                </div>
+                            </div>
+                        </div>
+                    `;
+                });
+            }
+            
+            allImagesHtml += '</div>';
+            container.innerHTML = albumsHtml;
+            imagesContainer.innerHTML = allImagesHtml;
+        }
+
+        async function viewAlbumDetails(albumName) {
+            const serverUrl = getServerUrl();
+            
+            try {
+                const response = await fetch(`${serverUrl}/list/${albumName}`);
+                if (response.ok) {
+                    const data = await response.json();
+                    
+                    let html = `
+                        <h2>📁 Album: ${albumName}</h2>
+                        <p style="color: #666; margin-bottom: 20px;">${data.count} image${data.count !== 1 ? 's' : ''}</p>
+                        <table class="table">
+                            <thead>
+                                <tr>
+                                    <th>Filename</th>
+                                    <th>Size</th>
+                                    <th>Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                ${data.images.map(img => `
+                                    <tr>
+                                        <td>${img.filename}</td>
+                                        <td>${img.size_formatted}</td>
+                                        <td>
+                                            <div class="action-buttons">
+                                                <button class="btn-secondary btn-small" 
+                                                        onclick="showImageModal('${serverUrl}${img.url}', '${img.filename}', null, '${albumName}')">
+                                                    View
+                                                </button>
+                                                <button class="btn-danger btn-small" 
+                                                        onclick="deleteImage('${albumName}', '${img.filename}'); closeModal();">
+                                                    Delete
+                                                </button>
+                                            </div>
+                                        </td>
+                                    </tr>
+                                `).join('')}
+                            </tbody>
+                        </table>
+                    `;
+                    
+                    document.getElementById('modalContent').innerHTML = html;
+                    document.getElementById('imageModal').style.display = 'block';
+                }
+            } catch (error) {
+                showStatus('albumsStatus', `❌ Error loading album: ${error.message}`, 'error');
+            }
+        }
+
+        async function deleteAlbum(albumName) {
+            if (!confirm(`Are you sure you want to delete the album "${albumName}" and all its images?`)) {
+                return;
+            }
+
+            const serverUrl = getServerUrl();
+            showStatus('albumsStatus', '<span class="spinner"></span>Deleting album...', 'loading');
+
+            try {
+                const response = await fetch(`${serverUrl}/albums/${albumName}`, {
+                    method: 'DELETE'
+                });
+
+                if (response.ok) {
+                    showStatus('albumsStatus', `✅ Album "${albumName}" deleted successfully`, 'success');
+                    loadAlbums();
+                } else {
+                    const error = await response.json();
+                    showStatus('albumsStatus', `❌ Error: ${error.detail}`, 'error');
+                }
+            } catch (error) {
+                showStatus('albumsStatus', `❌ Delete failed: ${error.message}`, 'error');
+            }
+        }
+
+        async function deleteImage(albumName, imageName) {
+            if (!confirm(`Delete "${imageName}"?`)) {
+                return;
+            }
+
+            const serverUrl = getServerUrl();
+            showStatus('albumsStatus', '<span class="spinner"></span>Deleting image...', 'loading');
+
+            try {
+                const response = await fetch(`${serverUrl}/images/albums/${albumName}/${imageName}`, {
+                    method: 'DELETE'
+                });
+
+                if (response.ok) {
+                    showStatus('albumsStatus', `✅ Image deleted successfully`, 'success');
+                    loadAlbums();
+                } else {
+                    const error = await response.json();
+                    showStatus('albumsStatus', `❌ Error: ${error.detail}`, 'error');
+                }
+            } catch (error) {
+                showStatus('albumsStatus', `❌ Delete failed: ${error.message}`, 'error');
+            }
+        }
+
+        async function getServerStatus() {
+            const serverUrl = getServerUrl();
+            showStatus('statusContainer', '<span class="spinner"></span>Loading server status...', 'loading');
+
+            try {
+                const response = await fetch(`${serverUrl}/status`);
+                if (response.ok) {
+                    const data = await response.json();
+                    displayServerStatus(data);
+                } else {
+                    document.getElementById('statusContainer').innerHTML = 
+                        '<div class="status-message show error">❌ Failed to load server status</div>';
+                }
+            } catch (error) {
+                document.getElementById('statusContainer').innerHTML = 
+                    `<div class="status-message show error">❌ Error: ${error.message}</div>`;
+            }
+        }
+
+        function displayServerStatus(data) {
+            const container = document.getElementById('statusContainer');
+            
+            const html = `
+                <div class="stats">
+                    <div class="stat-box">
+                        <div class="stat-value">${data.status === 'running' ? '✅' : '❌'}</div>
+                        <div class="stat-label">Server Status</div>
+                    </div>
+                    <div class="stat-box">
+                        <div class="stat-value">${data.reference_loaded ? '✅' : '❌'}</div>
+                        <div class="stat-label">Reference Loaded</div>
+                    </div>
+                    <div class="stat-box">
+                        <div class="stat-value">${(data.face_recognition.tolerance * 100).toFixed(0)}%</div>
+                        <div class="stat-label">Face Tolerance</div>
+                    </div>
+                    <div class="stat-box">
+                        <div class="stat-value">${data.face_recognition.min_confidence}%</div>
+                        <div class="stat-label">Min Confidence</div>
+                    </div>
+                </div>
+
+                <div style="margin-top: 30px;">
+                    <h3 style="margin-bottom: 15px;">📋 Configuration Details</h3>
+                    <table class="table">
+                        <tr>
+                            <td><strong>Server Status:</strong></td>
+                            <td>${data.status}</td>
+                        </tr>
+                        <tr>
+                            <td><strong>Reference Face Loaded:</strong></td>
+                            <td>${data.reference_loaded ? 'Yes' : 'No'}</td>
+                        </tr>
+                        <tr>
+                            <td><strong>Reference Path:</strong></td>
+                            <td>${data.reference_path || 'None'}</td>
+                        </tr>
+                        <tr>
+                            <td><strong>Face Recognition Tolerance:</strong></td>
+                            <td>${data.face_recognition.tolerance}</td>
+                        </tr>
+                        <tr>
+                            <td><strong>Minimum Confidence:</strong></td>
+                            <td>${data.face_recognition.min_confidence}%</td>
+                        </tr>
+                        <tr>
+                            <td><strong>Target Image Size:</strong></td>
+                            <td>${data.image_resizing.target_size_kb}KB</td>
+                        </tr>
+                        <tr>
+                            <td><strong>Max Image Dimension:</strong></td>
+                            <td>${data.image_resizing.max_dimension}px</td>
+                        </tr>
+                        <tr>
+                            <td><strong>JPEG Quality:</strong></td>
+                            <td>${data.image_resizing.jpeg_quality}</td>
+                        </tr>
+                    </table>
+                </div>
+
+                <div style="margin-top: 30px; padding: 20px; background: #f8f9fa; border-radius: 8px;">
+                    <h3 style="margin-bottom: 15px;">ℹ️ About This Server</h3>
+                    <p style="color: #666; line-height: 1.6;">
+                        This is a FastAPI-based face recognition server that automatically resizes uploaded images 
+                        to optimize them for face recognition processing. Images are compressed to approximately 500KB 
+                        with a maximum dimension of 1920px while maintaining quality and aspect ratio.
+                    </p>
+                    <p style="color: #666; line-height: 1.6; margin-top: 10px;">
+                        The face recognition system uses a tolerance-based matching algorithm with real-time 
+                        streaming results. Matches are returned as soon as they are found during the search process.
+                    </p>
+                </div>
+            `;
+            
+            container.innerHTML = html;
+        }
+
+        function showImageModal(imageUrl, filename, confidence, albumName) {
+            let html = `
+                <img src="${imageUrl}" alt="${filename}">
+                <h3>${filename}</h3>
+                <p style="color: #666; margin-bottom: 15px;">Album: ${albumName}</p>
+            `;
+            
+            if (confidence) {
+                html += `<div class="confidence" style="display: inline-block;">Confidence: ${confidence}%</div>`;
+            }
+            
+            html += `
+                <div style="margin-top: 20px;">
+                    <button class="btn-danger" onclick="deleteImage('${albumName}', '${filename}'); closeModal();">Delete Image</button>
+                    <button class="btn-secondary" onclick="closeModal()">Close</button>
+                </div>
+            `;
+            
+            document.getElementById('modalContent').innerHTML = html;
+            document.getElementById('imageModal').style.display = 'block';
+        }
+
+        function closeModal() {
+            document.getElementById('imageModal').style.display = 'none';
+        }
+
+        window.onclick = function(event) {
+            const modal = document.getElementById('imageModal');
+            if (event.target == modal) {
+                closeModal();
+            }
+        }
+
+        testConnection();
+    </script>
+</body>
+</html>

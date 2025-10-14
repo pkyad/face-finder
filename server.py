@@ -1,39 +1,179 @@
 #!/usr/bin/env python3
 """
-FastAPI Face Recognition Server with Streaming Results
-Streams matching filenames as they are found in real-time.
+FastAPI Face Recognition Server with Streaming Results, Image Upload, and Auto-Resizing
+Features: Image upload with auto-resizing, listing, and streaming face recognition.
 """
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, UploadFile, File, Form
 from fastapi.responses import StreamingResponse, FileResponse
-from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
 import face_recognition
 import os
 import asyncio
 from typing import List, Dict
 from pathlib import Path
+import shutil
+from PIL import Image, ImageOps
+import io
 
 app = FastAPI()
 
 # Add CORS middleware
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # Allow all origins
+    allow_origins=["*"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
+
+class ImageResizer:
+    """Image resizer for optimizing images for face recognition."""
+    
+    def __init__(self, target_size_kb: int = 500, max_dimension: int = 1920, quality: int = 85):
+        """
+        Initialize image resizer with compression settings.
+        
+        Args:
+            target_size_kb: Target file size in KB (default: 500KB)
+            max_dimension: Maximum width or height in pixels (default: 1920px)
+            quality: JPEG quality for compression (default: 85, range: 1-100)
+        """
+        self.target_size_kb = target_size_kb
+        self.max_dimension = max_dimension
+        self.quality = quality
+        self.target_size_bytes = target_size_kb * 1024
+    
+    def format_size(self, size_bytes: int) -> str:
+        """Format size in human-readable format."""
+        if size_bytes < 1024:
+            return f"{size_bytes}B"
+        elif size_bytes < 1024 * 1024:
+            return f"{size_bytes / 1024:.1f}KB"
+        else:
+            return f"{size_bytes / (1024 * 1024):.1f}MB"
+    
+    def calculate_optimal_dimensions(self, width: int, height: int) -> tuple:
+        """
+        Calculate optimal dimensions while maintaining aspect ratio.
+        
+        Args:
+            width: Original width
+            height: Original height
+            
+        Returns:
+            Tuple of (new_width, new_height)
+        """
+        if max(width, height) <= self.max_dimension:
+            return width, height
+        
+        if width > height:
+            scale_factor = self.max_dimension / width
+        else:
+            scale_factor = self.max_dimension / height
+        
+        new_width = int(width * scale_factor)
+        new_height = int(height * scale_factor)
+        return new_width, new_height
+    
+    def resize_image_bytes(self, image_bytes: bytes, filename: str) -> dict:
+        """
+        Resize image from bytes and return result.
+        
+        Args:
+            image_bytes: Image file content as bytes
+            filename: Original filename
+            
+        Returns:
+            Dictionary with resizing info and processed image bytes
+        """
+        try:
+            original_size = len(image_bytes)
+            
+            # Open image from bytes
+            img = Image.open(io.BytesIO(image_bytes))
+            original_width, original_height = img.size
+            
+            # Convert to RGB if necessary
+            if img.mode != 'RGB':
+                img = img.convert('RGB')
+            
+            # Auto-rotate based on EXIF data
+            img = ImageOps.exif_transpose(img)
+            
+            # Calculate optimal dimensions
+            new_width, new_height = self.calculate_optimal_dimensions(img.width, img.height)
+            
+            # Resize if needed
+            if (new_width, new_height) != (img.width, img.height):
+                img = img.resize((new_width, new_height), Image.Resampling.LANCZOS)
+            
+            # Save to bytes with quality optimization
+            current_quality = self.quality
+            output_buffer = io.BytesIO()
+            img.save(output_buffer, 'JPEG', quality=current_quality, optimize=True)
+            final_bytes = output_buffer.getvalue()
+            
+            # Reduce quality if too large
+            attempts = 0
+            max_attempts = 10
+            
+            while len(final_bytes) > self.target_size_bytes and current_quality > 30 and attempts < max_attempts:
+                current_quality -= 5
+                output_buffer = io.BytesIO()
+                img.save(output_buffer, 'JPEG', quality=current_quality, optimize=True)
+                final_bytes = output_buffer.getvalue()
+                attempts += 1
+            
+            final_size = len(final_bytes)
+            compression_ratio = ((original_size - final_size) / original_size) * 100
+            
+            return {
+                'success': True,
+                'original_size': original_size,
+                'final_size': final_size,
+                'original_dimensions': (original_width, original_height),
+                'final_dimensions': (new_width, new_height),
+                'compression_ratio': compression_ratio,
+                'final_quality': current_quality,
+                'image_bytes': final_bytes
+            }
+        
+        except Exception as e:
+            return {
+                'success': False,
+                'error': str(e),
+                'original_size': len(image_bytes)
+            }
+
+
 class FaceSearcher:
+    """Face recognition searcher with streaming results."""
+    
     def __init__(self, tolerance: float = 0.6, min_confidence: float = 55.0):
+        """
+        Initialize face searcher.
+        
+        Args:
+            tolerance: Face comparison tolerance (default: 0.6)
+            min_confidence: Minimum confidence percentage (default: 55.0)
+        """
         self.tolerance = tolerance
         self.min_confidence = min_confidence
         self.reference_encoding = None
         self.reference_path = None
     
     def load_reference_face(self, image_path: str) -> bool:
-        """Load the reference face from image"""
+        """
+        Load the reference face from image.
+        
+        Args:
+            image_path: Path to reference image
+            
+        Returns:
+            True if face loaded successfully, False otherwise
+        """
         if not os.path.exists(image_path):
             return False
         
@@ -54,6 +194,12 @@ class FaceSearcher:
         """
         Generator that yields matches as they are found.
         Streams filename and confidence as soon as a match is detected.
+        
+        Args:
+            album_folder: Path to album folder to search
+            
+        Yields:
+            Server-sent event strings with match information
         """
         if self.reference_encoding is None:
             yield "error: No reference face loaded\n\n"
@@ -63,22 +209,22 @@ class FaceSearcher:
             yield f"error: Album folder not found: {album_folder}\n\n"
             return
         
-        # Get all JPG files
-        jpg_files = []
+        # Get all image files
+        image_files = []
         for filename in os.listdir(album_folder):
-            if filename.lower().endswith('.jpg'):
-                jpg_files.append(os.path.join(album_folder, filename))
+            if filename.lower().endswith(('.jpg', '.jpeg', '.png')):
+                image_files.append(os.path.join(album_folder, filename))
         
-        if not jpg_files:
-            yield f"error: No JPG files found in {album_folder}\n\n"
+        if not image_files:
+            yield f"error: No image files found in {album_folder}\n\n"
             return
         
-        yield f"data: Searching in {len(jpg_files)} images...\n\n"
+        yield f"data: Searching in {len(image_files)} images...\n\n"
         await asyncio.sleep(0.1)
         
         match_count = 0
         
-        for image_path in jpg_files:
+        for image_path in image_files:
             filename = os.path.basename(image_path)
             
             try:
@@ -111,83 +257,243 @@ class FaceSearcher:
         yield f"data: {summary}\n\n"
 
 
-# Initialize searcher
+# Initialize searcher and resizer
 searcher = FaceSearcher()
+resizer = ImageResizer(target_size_kb=500, max_dimension=1920, quality=85)
+
+
+def ensure_folder_exists(folder_path: str):
+    """Create folder if it doesn't exist."""
+    os.makedirs(folder_path, exist_ok=True)
+
 
 @app.on_event("startup")
 async def startup_event():
-    """Load reference face on startup"""
-    reference_path = "sample.png"
-    if os.path.exists(reference_path):
-        if searcher.load_reference_face(reference_path):
-            print(f"✅ Reference face loaded from {reference_path}")
-        else:
-            print(f"❌ Failed to load reference face from {reference_path}")
-    else:
-        print(f"⚠️ Reference image not found: {reference_path}")
+    """Create necessary folders on startup."""
+    ensure_folder_exists("albums")
+    print("✅ Albums folder ready")
 
 
-@app.get("/search")
-async def search_faces():
+@app.post("/upload")
+async def upload_image(folder_name: str = Form(...), image: UploadFile = File(...)):
     """
-    Stream face recognition results as matches are found.
-    Streams results in Server-Sent Events (SSE) format.
-    """
-    if searcher.reference_encoding is None:
-        raise HTTPException(
-            status_code=400,
-            detail="Reference face not loaded. Ensure sample.png exists and contains a face."
-        )
+    Upload an image to a specific album folder with automatic resizing.
     
-    album_folder = "album_resized"
+    Args:
+        folder_name: Name of the album folder
+        image: Image file to upload
+    
+    Returns:
+        Success message with image path and resizing info
+    """
+    # Validate folder name
+    if ".." in folder_name or folder_name.startswith("/"):
+        raise HTTPException(status_code=400, detail="Invalid folder name")
+    
+    # Validate file
+    if not image.filename:
+        raise HTTPException(status_code=400, detail="No filename provided")
+    
+    if not image.filename.lower().endswith(('.jpg', '.jpeg', '.png')):
+        raise HTTPException(status_code=400, detail="Only JPG, JPEG, and PNG files are allowed")
+    
+    try:
+        # Create folder if it doesn't exist
+        folder_path = os.path.join("albums", folder_name)
+        ensure_folder_exists(folder_path)
+        
+        # Read image content
+        content = await image.read()
+        
+        # Resize image
+        resize_result = resizer.resize_image_bytes(content, image.filename)
+        
+        if not resize_result['success']:
+            raise HTTPException(status_code=400, detail=f"Error resizing image: {resize_result['error']}")
+        
+        # Save resized image as JPG
+        output_filename = os.path.splitext(image.filename)[0] + '.jpg'
+        file_path = os.path.join(folder_path, output_filename)
+        
+        with open(file_path, "wb") as f:
+            f.write(resize_result['image_bytes'])
+        
+        return {
+            "status": "success",
+            "message": "Image uploaded and resized successfully",
+            "folder": folder_name,
+            "filename": output_filename,
+            "path": file_path,
+            "resizing": {
+                "original_size": resizer.format_size(resize_result['original_size']),
+                "final_size": resizer.format_size(resize_result['final_size']),
+                "compression": f"{resize_result['compression_ratio']:.1f}%",
+                "original_dimensions": f"{resize_result['original_dimensions'][0]}×{resize_result['original_dimensions'][1]}",
+                "final_dimensions": f"{resize_result['final_dimensions'][0]}×{resize_result['final_dimensions'][1]}",
+                "quality": resize_result['final_quality']
+            }
+        }
+    
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error uploading image: {str(e)}")
+
+
+@app.get("/list")
+async def list_all_albums():
+    """
+    List all albums with their images.
+    
+    Returns:
+        Dictionary with album names and image lists
+    """
+    albums_folder = "albums"
+    
+    if not os.path.exists(albums_folder):
+        return {"albums": {}}
+    
+    albums = {}
+    
+    try:
+        for album_name in os.listdir(albums_folder):
+            album_path = os.path.join(albums_folder, album_name)
+            
+            if not os.path.isdir(album_path):
+                continue
+            
+            images = []
+            for filename in os.listdir(album_path):
+                if filename.lower().endswith(('.jpg', '.jpeg', '.png')):
+                    images.append({
+                        "filename": filename,
+                        "url": f"/images/albums/{album_name}/{filename}"
+                    })
+            
+            if images:
+                albums[album_name] = {
+                    "count": len(images),
+                    "images": images
+                }
+        
+        return {"albums": albums}
+    
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error listing albums: {str(e)}")
+
+
+@app.get("/list/{album_name}")
+async def list_album_images(album_name: str):
+    """
+    List all images in a specific album.
+    
+    Args:
+        album_name: Name of the album folder
+    
+    Returns:
+        List of images with metadata
+    """
+    # Validate album name
+    if ".." in album_name or album_name.startswith("/"):
+        raise HTTPException(status_code=400, detail="Invalid album name")
+    
+    album_path = os.path.join("albums", album_name)
+    
+    if not os.path.exists(album_path):
+        raise HTTPException(status_code=404, detail=f"Album not found: {album_name}")
+    
+    images = []
+    
+    try:
+        for filename in os.listdir(album_path):
+            if filename.lower().endswith(('.jpg', '.jpeg', '.png')):
+                file_path = os.path.join(album_path, filename)
+                file_size = os.path.getsize(file_path)
+                images.append({
+                    "filename": filename,
+                    "size": file_size,
+                    "size_formatted": resizer.format_size(file_size),
+                    "url": f"/images/albums/{album_name}/{filename}"
+                })
+        
+        return {
+            "album": album_name,
+            "count": len(images),
+            "images": images
+        }
+    
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error listing images: {str(e)}")
+
+
+@app.post("/search")
+async def search_faces(sample_folder: str = Form(...), album_folder: str = Form(...)):
+    """
+    Search for faces matching a sample image in an album.
+    
+    Args:
+        sample_folder: Folder containing the sample image
+        album_folder: Album folder to search in
+    
+    Returns:
+        Streaming response with matches
+    """
+    # Validate folder names
+    if ".." in sample_folder or ".." in album_folder:
+        raise HTTPException(status_code=400, detail="Invalid folder name")
+    
+    sample_path = os.path.join("albums", sample_folder)
+    
+    if not os.path.exists(sample_path):
+        raise HTTPException(status_code=404, detail=f"Sample folder not found: {sample_folder}")
+    
+    # Find first image in sample folder
+    sample_image_path = None
+    for filename in os.listdir(sample_path):
+        if filename.lower().endswith(('.jpg', '.jpeg', '.png')):
+            sample_image_path = os.path.join(sample_path, filename)
+            break
+    
+    if not sample_image_path:
+        raise HTTPException(status_code=400, detail=f"No sample image found in {sample_folder}")
+    
+    # Load reference face
+    if not searcher.load_reference_face(sample_image_path):
+        raise HTTPException(status_code=400, detail="No face detected in sample image")
+    
+    album_path = os.path.join("albums", album_folder)
     
     return StreamingResponse(
-        searcher.stream_search(album_folder),
+        searcher.stream_search(album_path),
         media_type="text/event-stream"
     )
 
 
-@app.get("/search/{album_name}")
-async def search_faces_custom_album(album_name: str):
-    """
-    Stream face recognition results from a custom album folder.
-    
-    Usage: /search/my_album_folder
-    """
-    if searcher.reference_encoding is None:
-        raise HTTPException(
-            status_code=400,
-            detail="Reference face not loaded. Ensure sample.png exists and contains a face."
-        )
-    
-    album_folder = album_name
-    
-    return StreamingResponse(
-        searcher.stream_search(album_folder),
-        media_type="text/event-stream"
-    )
-
-
-@app.get("/images/{album_name}/{image_name}")
+@app.get("/images/albums/{album_name}/{image_name}")
 async def get_image(album_name: str, image_name: str):
     """
     Serve static images from album folders.
     
-    Usage: /images/album_resized/image.jpg
+    Args:
+        album_name: Album folder name
+        image_name: Image filename
+    
+    Returns:
+        Image file
     """
     # Prevent directory traversal attacks
     if ".." in album_name or ".." in image_name:
         raise HTTPException(status_code=400, detail="Invalid path")
     
-    image_path = os.path.join(album_name, image_name)
+    image_path = os.path.join("albums", album_name, image_name)
     
-    # Verify the file exists and is in the correct directory
+    # Verify the file exists
     if not os.path.exists(image_path):
         raise HTTPException(status_code=404, detail=f"Image not found: {image_path}")
     
-    # Verify it's actually in the requested album folder
+    # Verify it's in the correct directory
     real_path = os.path.realpath(image_path)
-    real_album = os.path.realpath(album_name)
+    real_album = os.path.realpath(os.path.join("albums", album_name))
     
     if not real_path.startswith(real_album):
         raise HTTPException(status_code=400, detail="Invalid path")
@@ -199,30 +505,138 @@ async def get_image(album_name: str, image_name: str):
     return FileResponse(image_path)
 
 
+@app.delete("/albums/{album_name}")
+async def delete_album(album_name: str):
+    """
+    Delete an entire album folder.
+    
+    Args:
+        album_name: Album folder to delete
+    
+    Returns:
+        Success message
+    """
+    if ".." in album_name or album_name.startswith("/"):
+        raise HTTPException(status_code=400, detail="Invalid album name")
+    
+    album_path = os.path.join("albums", album_name)
+    
+    if not os.path.exists(album_path):
+        raise HTTPException(status_code=404, detail=f"Album not found: {album_name}")
+    
+    try:
+        shutil.rmtree(album_path)
+        return {"status": "success", "message": f"Album '{album_name}' deleted"}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error deleting album: {str(e)}")
+
+
+@app.delete("/images/albums/{album_name}/{image_name}")
+async def delete_image(album_name: str, image_name: str):
+    """
+    Delete a specific image from an album.
+    
+    Args:
+        album_name: Album folder name
+        image_name: Image filename to delete
+    
+    Returns:
+        Success message
+    """
+    if ".." in album_name or ".." in image_name:
+        raise HTTPException(status_code=400, detail="Invalid path")
+    
+    image_path = os.path.join("albums", album_name, image_name)
+    
+    if not os.path.exists(image_path):
+        raise HTTPException(status_code=404, detail=f"Image not found")
+    
+    try:
+        os.remove(image_path)
+        return {"status": "success", "message": f"Image '{image_name}' deleted"}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error deleting image: {str(e)}")
+
+
 @app.get("/")
 async def root():
-    """API information"""
+    """API information and documentation."""
     return {
         "name": "Face Recognition Streaming Server",
+        "version": "2.0",
+        "description": "FastAPI server for face recognition with image upload, resizing, and streaming search",
         "endpoints": {
-            "/search": "Search in default 'album_resized' folder",
-            "/search/{album_name}": "Search in custom album folder",
-            "/images/{album_name}/{image_name}": "Serve static images"
+            "upload": {
+                "method": "POST",
+                "path": "/upload",
+                "description": "Upload image to album (auto-resizes to ~500KB)",
+                "params": {"folder_name": "Album name", "image": "Image file (JPG/PNG)"}
+            },
+            "list_all": {
+                "method": "GET",
+                "path": "/list",
+                "description": "List all albums with images"
+            },
+            "list_album": {
+                "method": "GET",
+                "path": "/list/{album_name}",
+                "description": "List images in specific album"
+            },
+            "search": {
+                "method": "POST",
+                "path": "/search",
+                "description": "Stream face recognition results",
+                "params": {"sample_folder": "Folder with sample image", "album_folder": "Album to search in"}
+            },
+            "get_image": {
+                "method": "GET",
+                "path": "/images/albums/{album_name}/{image_name}",
+                "description": "Get image file"
+            },
+            "delete_album": {
+                "method": "DELETE",
+                "path": "/albums/{album_name}",
+                "description": "Delete entire album"
+            },
+            "delete_image": {
+                "method": "DELETE",
+                "path": "/images/albums/{album_name}/{image_name}",
+                "description": "Delete single image"
+            },
+            "status": {
+                "method": "GET",
+                "path": "/status",
+                "description": "Check server status"
+            }
         },
-        "usage": "Access the endpoints in your browser or use curl",
-        "example_curl": "curl http://localhost:8000/search",
-        "example_image": "http://localhost:8000/images/album_resized/photo.jpg"
+        "features": [
+            "Automatic image resizing and compression",
+            "EXIF auto-rotation",
+            "Real-time streaming face recognition",
+            "Album management",
+            "RESTful API with Swagger documentation"
+        ],
+        "swagger_ui": "http://localhost:8000/docs",
+        "redoc": "http://localhost:8000/redoc"
     }
 
 
 @app.get("/status")
 async def status():
-    """Check if reference face is loaded"""
+    """Check server status and configuration."""
     return {
+        "status": "running",
         "reference_loaded": searcher.reference_encoding is not None,
         "reference_path": searcher.reference_path,
-        "tolerance": searcher.tolerance,
-        "min_confidence": searcher.min_confidence
+        "face_recognition": {
+            "tolerance": searcher.tolerance,
+            "min_confidence": searcher.min_confidence
+        },
+        "image_resizing": {
+            "target_size_kb": resizer.target_size_kb,
+            "max_dimension": resizer.max_dimension,
+            "jpeg_quality": resizer.quality
+        }
     }
 
 
