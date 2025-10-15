@@ -5,21 +5,19 @@ Features: Image upload with auto-resizing, listing, and streaming face recogniti
 """
 
 from fastapi import FastAPI, HTTPException, UploadFile, File, Form
-from fastapi.responses import StreamingResponse, FileResponse
+from fastapi.responses import StreamingResponse, FileResponse, HTMLResponse
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import HTMLResponse
 
 import face_recognition
+import numpy as np
 import os
 import asyncio
-from typing import List, Dict
-from pathlib import Path
 import shutil
 from PIL import Image, ImageOps
 import io
 
-app = FastAPI()
+app = FastAPI(title="Face Recognition Server", version="1.0.0")
 
 # Add CORS middleware
 app.add_middleware(
@@ -165,33 +163,6 @@ class FaceSearcher:
         self.tolerance = tolerance
         self.min_confidence = min_confidence
         self.reference_encoding = None
-        self.reference_path = None
-    
-    def load_reference_face(self, image_path: str) -> bool:
-        """
-        Load the reference face from image.
-        
-        Args:
-            image_path: Path to reference image
-            
-        Returns:
-            True if face loaded successfully, False otherwise
-        """
-        if not os.path.exists(image_path):
-            return False
-        
-        try:
-            reference_image = face_recognition.load_image_file(image_path)
-            face_encodings = face_recognition.face_encodings(reference_image)
-            
-            if len(face_encodings) == 0:
-                return False
-            
-            self.reference_encoding = face_encodings[0]
-            self.reference_path = image_path
-            return True
-        except Exception:
-            return False
     
     async def stream_search(self, album_folder: str):
         """
@@ -274,7 +245,8 @@ def ensure_folder_exists(folder_path: str):
 async def startup_event():
     """Create necessary folders on startup."""
     ensure_folder_exists("albums")
-    print("✅ Albums folder ready")
+    ensure_folder_exists("static")
+    print("✅ Server started - Albums and static folders ready")
 
 
 @app.post("/upload")
@@ -430,42 +402,66 @@ async def list_album_images(album_name: str):
 
 
 @app.post("/search")
-async def search_faces(sample_folder: str = Form(...), album_folder: str = Form(...)):
+async def search_faces(
+    sample_image: UploadFile = File(...),
+    album_folder: str = Form(...)
+):
     """
     Search for faces matching a sample image in an album.
+    Processes sample image in memory without saving to disk.
     
     Args:
-        sample_folder: Folder containing the sample image
+        sample_image: Sample image file containing the face to search for
         album_folder: Album folder to search in
     
     Returns:
         Streaming response with matches
     """
-    # Validate folder names
-    if ".." in sample_folder or ".." in album_folder:
+    # Validate folder name
+    if ".." in album_folder or album_folder.startswith("/"):
         raise HTTPException(status_code=400, detail="Invalid folder name")
     
-    sample_path = os.path.join("albums", sample_folder)
+    # Validate sample image file
+    if not sample_image.filename:
+        raise HTTPException(status_code=400, detail="No sample image provided")
     
-    if not os.path.exists(sample_path):
-        raise HTTPException(status_code=404, detail=f"Sample folder not found: {sample_folder}")
+    if not sample_image.filename.lower().endswith(('.jpg', '.jpeg', '.png')):
+        raise HTTPException(status_code=400, detail="Sample image must be JPG, JPEG, or PNG")
     
-    # Find first image in sample folder
-    sample_image_path = None
-    for filename in os.listdir(sample_path):
-        if filename.lower().endswith(('.jpg', '.jpeg', '.png')):
-            sample_image_path = os.path.join(sample_path, filename)
-            break
+    try:
+        # Read sample image content into memory
+        sample_content = await sample_image.read()
+        
+        # Load image from bytes using PIL
+        sample_img = Image.open(io.BytesIO(sample_content))
+        
+        # Convert to RGB if necessary
+        if sample_img.mode != 'RGB':
+            sample_img = sample_img.convert('RGB')
+        
+        # Convert PIL image to numpy array for face_recognition
+        sample_array = np.array(sample_img)
+        
+        # Extract face encoding from sample image
+        face_encodings = face_recognition.face_encodings(sample_array)
+        
+        if len(face_encodings) == 0:
+            raise HTTPException(status_code=400, detail="No face detected in sample image")
+        
+        # Use the first face found as reference
+        searcher.reference_encoding = face_encodings[0]
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Error processing sample image: {str(e)}")
     
-    if not sample_image_path:
-        raise HTTPException(status_code=400, detail=f"No sample image found in {sample_folder}")
-    
-    # Load reference face
-    if not searcher.load_reference_face(sample_image_path):
-        raise HTTPException(status_code=400, detail="No face detected in sample image")
-    
+    # Verify album folder exists
     album_path = os.path.join("albums", album_folder)
+    if not os.path.exists(album_path):
+        raise HTTPException(status_code=404, detail=f"Album folder not found: {album_folder}")
     
+    # Stream search results
     return StreamingResponse(
         searcher.stream_search(album_path),
         media_type="text/event-stream"
@@ -560,36 +556,21 @@ async def delete_image(album_name: str, image_name: str):
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error deleting image: {str(e)}")
 
-# Serve static folder
+
+# Mount static files before catch-all route
 app.mount("/static", StaticFiles(directory="static"), name="static")
 
-# Serve index.html at /
+
+# Serve index.html at root
 @app.get("/", response_class=HTMLResponse)
 async def serve_index():
     """Serve the main HTML page."""
-    if not os.path.exists("index.html"):
+    index_path = "index.html"
+    if not os.path.exists(index_path):
         return HTMLResponse("<h1>index.html not found</h1>", status_code=404)
-    with open("index.html", "r", encoding="utf-8") as f:
+    
+    with open(index_path, "r", encoding="utf-8") as f:
         return HTMLResponse(f.read())
-
-
-@app.get("/status")
-async def status():
-    """Check server status and configuration."""
-    return {
-        "status": "running",
-        "reference_loaded": searcher.reference_encoding is not None,
-        "reference_path": searcher.reference_path,
-        "face_recognition": {
-            "tolerance": searcher.tolerance,
-            "min_confidence": searcher.min_confidence
-        },
-        "image_resizing": {
-            "target_size_kb": resizer.target_size_kb,
-            "max_dimension": resizer.max_dimension,
-            "jpeg_quality": resizer.quality
-        }
-    }
 
 
 if __name__ == "__main__":

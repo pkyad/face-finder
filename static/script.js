@@ -15,42 +15,17 @@ function switchTab(tabName) {
 
     if (tabName === 'albums') {
         loadAlbums();
-    } else if (tabName === 'status') {
-        getServerStatus();
     }
 }
 
 function getServerUrl() {
-    return document.getElementById('serverUrl').value.trim();
+    return '';  // Empty string means use same server
 }
 
 function showStatus(elementId, message, type = 'info') {
     const element = document.getElementById(elementId);
     element.innerHTML = message;
     element.className = `status-message show ${type}`;
-}
-
-async function testConnection() {
-    const serverUrl = getServerUrl();
-    if (!serverUrl) {
-        document.getElementById('connectionStatus').innerHTML = '❌ No server URL';
-        document.getElementById('connectionStatus').style.color = '#e74c3c';
-        return;
-    }
-
-    try {
-        const response = await fetch(`${serverUrl}/status`);
-        if (response.ok) {
-            document.getElementById('connectionStatus').innerHTML = '✅ Connected';
-            document.getElementById('connectionStatus').style.color = '#27ae60';
-        } else {
-            document.getElementById('connectionStatus').innerHTML = '❌ Connection failed';
-            document.getElementById('connectionStatus').style.color = '#e74c3c';
-        }
-    } catch (error) {
-        document.getElementById('connectionStatus').innerHTML = '❌ Server offline';
-        document.getElementById('connectionStatus').style.color = '#e74c3c';
-    }
 }
 
 function updateFileName() {
@@ -61,16 +36,39 @@ function updateFileName() {
     }
 }
 
+function updateSampleFileName() {
+    const file = document.getElementById('sampleImageFile').files[0];
+    const fileNameDiv = document.getElementById('sampleFileName');
+    const previewDiv = document.getElementById('samplePreview');
+    const previewImg = document.getElementById('samplePreviewImg');
+    
+    if (file) {
+        fileNameDiv.textContent = `✓ ${file.name}`;
+        fileNameDiv.style.display = 'block';
+        
+        // Show preview
+        const reader = new FileReader();
+        reader.onload = function(e) {
+            previewImg.src = e.target.result;
+            previewDiv.style.display = 'block';
+        };
+        reader.readAsDataURL(file);
+    } else {
+        fileNameDiv.style.display = 'none';
+        previewDiv.style.display = 'none';
+    }
+}
+
 function handleDragOver(e) {
     e.preventDefault();
     e.stopPropagation();
-    document.getElementById('fileLabel').classList.add('dragover');
+    e.currentTarget.classList.add('dragover');
 }
 
 function handleDragLeave(e) {
     e.preventDefault();
     e.stopPropagation();
-    document.getElementById('fileLabel').classList.remove('dragover');
+    e.currentTarget.classList.remove('dragover');
 }
 
 function handleDrop(e) {
@@ -82,6 +80,24 @@ function handleDrop(e) {
     if (files.length > 0) {
         document.getElementById('imageFile').files = files;
         updateFileName();
+    }
+}
+
+function handleSampleDragLeave(e) {
+    e.preventDefault();
+    e.stopPropagation();
+    e.currentTarget.classList.remove('dragover');
+}
+
+function handleSampleDrop(e) {
+    e.preventDefault();
+    e.stopPropagation();
+    document.getElementById('sampleFileLabel').classList.remove('dragover');
+
+    const files = e.dataTransfer.files;
+    if (files.length > 0) {
+        document.getElementById('sampleImageFile').files = files;
+        updateSampleFileName();
     }
 }
 
@@ -171,13 +187,23 @@ function clearUploadForm() {
     document.getElementById('fileName').style.display = 'none';
 }
 
+function clearSearchForm() {
+    document.getElementById('sampleImageFile').value = '';
+    document.getElementById('sampleFileName').style.display = 'none';
+    document.getElementById('samplePreview').style.display = 'none';
+    document.getElementById('searchAlbum').value = '';
+    document.getElementById('resultsGallery').innerHTML = '';
+    document.getElementById('searchSummary').classList.remove('show');
+    document.getElementById('searchStatus').innerHTML = '';
+}
+
 async function startSearch() {
     const serverUrl = getServerUrl();
-    const sampleFolder = document.getElementById('sampleFolder').value.trim();
+    const sampleImageFile = document.getElementById('sampleImageFile').files[0];
     const searchAlbum = document.getElementById('searchAlbum').value.trim();
 
-    if (!sampleFolder) {
-        showStatus('searchStatus', '❌ Please enter sample folder', 'error');
+    if (!sampleImageFile) {
+        showStatus('searchStatus', '❌ Please upload a sample image with the face to search', 'error');
         return;
     }
 
@@ -195,7 +221,7 @@ async function startSearch() {
     document.getElementById('stopSearchBtn').disabled = false;
 
     const formData = new FormData();
-    formData.append('sample_folder', sampleFolder);
+    formData.append('sample_image', sampleImageFile);
     formData.append('album_folder', searchAlbum);
 
     try {
@@ -619,5 +645,3 @@ window.onclick = function(event) {
         closeModal();
     }
 }
-
-testConnection();
